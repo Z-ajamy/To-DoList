@@ -22,7 +22,7 @@ class Task extends Base {
     this.content, // not required becouse ?
     this.dueDate, // not required becouse ?
     this.isDone = false, // not required becouse the init "this.isDone = false"
-  }) : super._internal(id: id, createdAt: createdAt);
+  }) : super.internal(id: id, createdAt: createdAt);
 
   factory Task.fromJson(Map<String, dynamic> json) {
     return Task._internal(
@@ -38,7 +38,7 @@ class Task extends Base {
   }
 
   @override
-  Map<String, dynamic> _toMap() {
+  Map<String, dynamic> toMap() {
     return {
       "id": id,
       "createdAt": createdAt.toIso8601String(),
@@ -50,13 +50,13 @@ class Task extends Base {
   }
 
   @override
-  Map<String, Map<String, dynamic>> toDict() {
-    String name_id = "Task.$id";
-    return {name_id: _toMap()};
+  String getKey(){
+    return "Task.$id";
   }
 
   Task copyWith({
       String? title,
+      String? content,
       DateTime? dueDate,
       bool? isDone,
     }) {
@@ -64,6 +64,7 @@ class Task extends Base {
         id: this.id,
         createdAt: this.createdAt,
         title: title ?? this.title,
+        content: content ?? this.content,
         dueDate: dueDate ?? this.dueDate,
         isDone: isDone ?? this.isDone,
       );
