@@ -1,206 +1,185 @@
-# 📝 Dart CLI Task Manager
+# Dart Full-Stack Core: Task Manager (CLI)
 
-A clean, well-architected command-line task manager built with pure Dart, demonstrating professional software design principles and separation of concerns.
+![Language](https://img.shields.io/badge/Language-Dart-0175C2.svg)
+![Architecture](https://img.shields.io/badge/Architecture-3--Tier_Clean-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-## 🎯 Project Philosophy
+A robust, scalable, and testable application core for a Task Management system, written entirely in pure Dart. This project serves as the foundational "backend" and "business logic" layer, starting with a Command-Line Interface (CLI).
 
-While this application provides practical task management functionality, its **primary purpose is educational**: to showcase how to build maintainable, scalable software using clean architecture principles. Every design decision prioritizes flexibility, testability, and future extensibility.
+This project is built from the ground up to be **extensible** and **platform-agnostic**. The architecture is designed to support future expansion into a full-stack application (Flutter Frontend, Dart/Firebase Backend) by strictly adhering to SOLID principles, especially Dependency Injection and Interface Segregation.
 
-## ✨ Current Features (Phase 1)
+---
 
-- ✅ **Add Tasks**: Create new tasks directly from the command line
-- 📋 **View Tasks**: Display all saved tasks in an organized format
-- 💾 **Persistent Storage**: Tasks are automatically saved to `tasks.json` and survive program restarts
-- 🔄 **Switchable Architecture**: Storage implementation can be swapped (JSON → Database) without touching business logic
+## 🏛️ Core Architectural Design
 
-## 🏗️ Architecture Overview
+This project is not a simple script; it is a 3-Tier Layered Application. This separation of concerns is the project's main feature, allowing for independent development and testing of each layer.
 
-This project implements **Clean Architecture** principles with a focus on:
 
-### 1. **Separation of Concerns**
-- **Model Layer** (`task.dart`): Pure data representation
-- **Repository Layer** (`task_repository.dart`): Abstract contracts
-- **Implementation Layer** (`json_storage.dart`): Concrete storage logic
-- **Presentation Layer** (`main.dart`): User interface and application entry point
 
-### 2. **Dependency Inversion**
-The application depends on abstractions, not concrete implementations:
-```dart
-// ❌ Bad: Direct dependency on implementation
-final storage = JsonTaskRepository();
+1.  **UI / Presentation Layer (`bin/main.dart`)**
+    * **Responsibility:** Only "showing" information and "capturing" user input.
+    * It is "dumb" and holds no business logic.
+    * It only communicates with the `Service` layer.
+    * *This layer is designed to be completely replaceable with a Flutter UI or a REST API.*
 
-// ✅ Good: Dependency on abstraction
-final ITaskRepository storage = JsonTaskRepository();
-```
+2.  **Service Layer (`lib/services/task_service.dart`)**
+    * **Responsibility:** The "Brain" of the application.
+    * It contains all **Business Logic** (e.g., validation, sorting, state changes).
+    * It knows nothing about the UI or how data is stored.
+    * It communicates only with the `Repository` interface (`IRepository`).
 
-### 3. **Repository Pattern**
-The `ITaskRepository` interface defines a contract that any storage mechanism must fulfill:
-- `getAllTasks()`: Retrieve all tasks
-- `addTask(Task task)`: Save a new task
-- Future methods: `updateTask()`, `deleteTask()`, etc.
+3.  **Data Layer (`lib/repositories/`)**
+    * **Responsibility:** The "Hands" of the application.
+    * Handles the "how" and "where" of data persistence (I/O).
+    * This layer is split into an **Abstraction** (`IRepository`) and an **Implementation** (`JsonRepository`).
 
-## 🛠️ Technical Stack
+---
 
-### Language & Runtime
-- **Dart SDK**: Pure Dart implementation (no Flutter dependencies)
+### 🔑 Key Design Patterns Used
 
-### Core Libraries
-| Library | Purpose |
-|---------|---------|
-| `dart:io` | Command-line I/O and file operations |
-| `dart:convert` | JSON serialization/deserialization |
-| `dart:async` | Asynchronous programming (Future, async/await) |
+* **Repository Pattern:** `IRepository` acts as an abstract contract. The Service layer depends on this abstraction, not on the concrete `JsonRepository`. This allows us to swap `JsonRepository` with `FirebaseRepository` or `SqlRepository` in the future without changing a single line in the Service layer.
+* **Unit of Work (UoW):** The `IRepository` interface is built around a UoW pattern. Changes (`save`, `delete`) are made to an in-memory cache (`_data`) and are only persisted when `commit()` is called. This is highly efficient for batch operations.
+* **Dependency Injection (DI) & Composition Root:** We avoid "hard-coding" dependencies. The `AppService` class acts as our **Composition Root**. It reads environment variables, initializes the correct `Repository`, and "injects" it into the `TaskService`, which is then provided to the UI.
+* **Factory Pattern:** The `JsonRepository` is decoupled from concrete models (like `Task`) by requiring a `Map<String, JsonFactory>`. This makes the repository extensible to new models (`User`, `Note`) without modifying its source code (Open/Closed Principle).
+* **Professional Logging:** A dedicated `ILogger` interface is injected into all services and repositories, allowing us to toggle logging from a central location (`AppService`) or swap file logging for cloud logging.
 
-### Design Patterns
-- **Repository Pattern**: Data access abstraction
-- **Dependency Injection**: Loose coupling between components
-- **Factory Pattern**: Object creation in model classes (`fromJson`)
+---
 
-## 📁 Project Structure
+## 📁 File Structure
 
 ```
-task_manager/
+.
 ├── bin/
-│   └── main.dart                 # Entry point & CLI interface
+│   └── main.dart           # (Layer 1: UI + Composition Root)
 ├── lib/
-│   ├── task.dart                 # Task model (data structure)
-│   ├── task_repository.dart      # Repository contract (interface)
-│   └── json_storage.dart         # JSON implementation
-└── tasks.json                    # Persistent storage file
+│   ├── app_service.dart      # (The App "Container")
+│   ├── logging/
+│   │   ├── file_logger.dart  # (Implementation)
+│   │   ├── i_logger.dart     # (Abstraction)
+│   │   └── null_logger.dart  # (Implementation)
+│   ├── models/
+│   │   ├── base.dart         # (Abstract Model with id, createdAt)
+│   │   └── task.dart         # (Concrete Model)
+│   ├── repositories/
+│   │   ├── i_repository.dart     # (Abstraction - The "Contract")
+│   │   └── json_repository.dart  # (Implementation - JSON Storage)
+│   └── services/
+│       └── task_service.dart   # (Layer 2: Business Logic)
+├── logs/
+│   └── (Session logs are generated here...)
+├── data.json                   # (Default database file)
+├── pubspec.yaml
+└── README.md
 ```
 
-### File Responsibilities
-
-#### `bin/main.dart` (Presentation Layer)
-- Handles user input/output
-- Manages application flow
-- Injects dependencies
-- No direct knowledge of storage mechanism
-
-#### `lib/task.dart` (Domain Layer)
-- Defines the `Task` data model
-- Contains serialization logic (`toJson`, `fromJson`)
-- Pure business object with no external dependencies
-
-#### `lib/task_repository.dart` (Abstraction Layer)
-- Declares the `ITaskRepository` abstract class
-- Defines the contract for all storage implementations
-- Ensures consistency across different storage mechanisms
-
-#### `lib/json_storage.dart` (Data Layer)
-- Implements `ITaskRepository` using JSON files
-- Handles file I/O operations asynchronously
-- Manages error handling for file operations
-
-#### `tasks.json` (Storage)
-- Physical storage file created automatically
-- Stores tasks in JSON array format
-- Human-readable for debugging
+---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Dart SDK 2.19 or higher
 
-### Installation
-```bash
-# Clone the repository
-git clone <repository-url>
-cd task_manager
+* [Dart SDK](https://dart.dev/get-dart) (v3.0 or later)
+* (Recommended) An IDE like Visual Studio Code
 
-# Run the application
-dart run bin/main.dart
-```
+### Installation & Running
 
-### Basic Usage
-```bash
-# Add a task
-> 1
-Enter task description: Complete project documentation
-✅ Task added successfully!
+1.  **Clone the repository:**
+    ```bash
+    git clone <your-repo-url>
+    cd To-DoList
+    ```
 
-# View all tasks
-> 2
-📋 Your Tasks:
-1. Complete project documentation
+2.  **Install dependencies:**
+    (This will fetch `uuid`, `intl`, and `path` from `pubspec.yaml`)
+    ```bash
+    dart pub get
+    ```
 
-# Exit
-> 3
-```
+3.  **Run the application:**
+    ```bash
+    dart run bin/main.dart
+    ```
 
-## 🔮 Future Roadmap
+4.  **Run with Logging Enabled:**
+    The application will create a new log file in the `logs/` directory for your session.
+    ```bash
+    dart run bin/main.dart -logs
+    ```
 
-The current architecture is designed to scale effortlessly. Here are planned enhancements:
+5.  **Run with Custom Settings (Environment Variables):**
+    You can specify a different database file or storage type (once implemented) using environment variables.
 
-### Phase 2: Alternative Storage
-```dart
-// SQLite implementation
-class SqliteTaskRepository implements ITaskRepository {
-  @override
-  Future<List<Task>> getAllTasks() async {
-    // Query from SQLite database
-  }
-}
-```
+    ```bash
+    # (Linux/macOS)
+    export TODO_DB_FILE=prod_data.json
+    dart run bin/main.dart
 
-### Phase 3: Cloud Integration
-```dart
-// Firebase implementation
-class FirebaseTaskRepository implements ITaskRepository {
-  @override
-  Future<List<Task>> getAllTasks() async {
-    // Fetch from Firestore
-  }
-}
-```
-
-### Phase 4: Cross-Platform UI
-- **Flutter Mobile App**: Reuse the same repository layer
-- **Web Interface**: Build a responsive web UI
-- **Desktop Application**: Create native desktop experience
-
-### Phase 5: Backend API
-- Build a REST API using Dart (`shelf`/`conduit`)
-- Serve multiple clients (web, mobile, desktop)
-- Add authentication and multi-user support
-
-## 🧪 Why This Architecture Matters
-
-### Testability
-```dart
-// Mock repository for testing
-class MockTaskRepository implements ITaskRepository {
-  final List<Task> _tasks = [];
-  
-  @override
-  Future<List<Task>> getAllTasks() async => _tasks;
-}
-```
-
-
-### Maintainability
-- Each component has a single responsibility
-- Changes in one layer don't affect others
-- New features can be added without breaking existing code
-
-## 📚 Learning Outcomes
-
-By studying this project, you'll understand:
-
-1. **Clean Architecture Principles**: How to structure applications for long-term maintainability
-2. **SOLID Principles**: Practical implementation of OOP best practices
-3. **Async Programming**: Proper use of Future, async, and await in Dart
-4. **Design Patterns**: Repository, Dependency Injection, and Factory patterns
-5. **File I/O**: Safe and efficient file operations in Dart
-
-## 🤝 Contributing
-
-This is an educational project. Contributions that enhance the architectural clarity or add well-documented features are welcome!
-
-## 👨‍💻 Author
-
-Z-ajamy
+    # (Windows - PowerShell)
+    $env:TODO_DB_FILE = "prod_data.json"
+    dart run bin/main.dart
+    ```
 
 ---
 
-**Note**: This project prioritizes code quality and architecture over feature completeness. It's designed to be a learning resource and a foundation for larger applications.
+## 💻 Available Commands
+
+The CLI operates like a classic console (e.g., `hbnb`).
+
+| Command | Arguments | Description |
+| :--- | :--- | :--- |
+| `create` | `task title=<Your_Title>` | Creates a new task in memory. |
+| `all` | `task` | Lists all tasks from memory, sorted by newest. |
+| `all` | (no arguments) | Dumps the *entire* raw JSON cache from memory. |
+| `getinfo` | `<key>` (e.g., `Task.123...`) | Dumps the raw JSON for a single object. |
+| `change` | `<key>` (e.g., `Task.123...`) | Toggles the `isDone` status of a task. |
+| `delete` | `<key>` (e.g., `Task.123...`) | Deletes a task from memory. |
+| `commit` | (no arguments) | Saves all in-memory changes to the `data.json` file. |
+| `exit` | (no arguments) | Automatically calls `commit` and exits the program. |
+| `help` | (no arguments) | Displays this help message. |
+
+---
+
+## 🛠️ Architectural Trade-offs (Pros & Cons)
+
+This architecture was chosen to prioritize **Testability** and **Abstraction** over raw performance for this specific use case (local JSON file).
+
+### ✅ Advantages
+
+* **Testable:** All classes are "POJOs" (Plain Old Dart Objects). `JsonRepository` and `TaskService` can be instantiated in a test file with mock dependencies (e.g., a `test.json` file or a "mock" repository).
+* **Extensible (Open/Closed):** The `JsonFactory` registry in `JsonRepository` allows new models (`User`, `Note`) to be added without *ever* modifying `JsonRepository`'s code.
+* **Decoupled (Decoupled):** The UI (`main.dart`) is completely unaware of *how* data is stored (JSON, Firebase, etc.). The Service Layer (`TaskService`) is also unaware. This is a robust separation of concerns.
+
+### ⚠️ Disadvantages (The "Architectural Warning")
+
+As noted in the code, the `JsonRepository` implementation is **not for production use** at scale.
+* **1. Memory Bottleneck:** `reload()` loads the *entire* database file into memory. This will crash the app if `data.json` becomes too large.
+* **2. I/O Bottleneck:** `commit()` *rewrites the entire* file for every commit. This is highly inefficient.
+* **3. Data Loss Risk:** The "Unit of Work" pattern means all changes (`save`, `delete`) are in-memory only. If the app crashes before `commit`, all data from that session is lost.
+* **4. Abstraction Mismatch (ISP Violation):** The `IRepository` contract (with `commit`/`reload`) is "opinionated" for this local workflow. A real-time backend like Firebase *does not* have `commit` or `reload` methods. A future `FirebaseRepository` would need to implement these methods as empty stubs or throw errors, which is not ideal.
+
+---
+
+## 🛣️ Future Roadmap
+
+This project is the **Core** for a full-stack application. The architecture is ready for the following expansions:
+
+### 1. Backend Expansion
+* [ ] **Add New Models:** Create `User` and `Note` classes inheriting from `Base`.
+* [ ] **Add New Services:** Create `UserService` and `NoteService` (following Microservice principles) and add them to `AppService`.
+* [ ] **Swap Data Layer (Firebase):**
+    * Create `FirebaseRepository implements IRepository`.
+    * `save()` -> `firestore.collection.doc.set()`
+    * `delete()` -> `firestore.collection.doc.delete()`
+    * `all()` -> `firestore.collection.get()`
+    * `commit()` / `reload()` will be empty (Firebase is real-time).
+    * Change **one line** in `app_service.dart` to inject `FirebaseRepository` instead of `JsonRepository`.
+* [ ] **Build a REST API (Dart Backend):**
+    * Create a new `bin/api_server.dart`.
+    * Use a Dart server package (like `shelf` or `conduit`).
+    * The API endpoints (e.g., `POST /task`) will call the *exact same* `appService.taskService.createNewTask(...)` that the CLI uses.
+
+### 2. Frontend Expansion (Flutter)
+* [ ] **Create a new Flutter project.**
+* [ ] **Import this project's `lib/` folder** directly.
+* [ ] The Flutter `main.dart` will become the new "Composition Root," initializing `AppService` just as the CLI does.
+* [ ] All Flutter Widgets (UI) will get their data by calling `appService.taskService`, ensuring the *exact same* business logic is shared between the CLI and the Flutter app.
