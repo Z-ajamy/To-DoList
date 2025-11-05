@@ -1,91 +1,76 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'i_repository.dart';
 import '../models/base.dart';
 
 typedef JsonFactory = Base Function(Map<String, dynamic> json);
 
-
 class JsonRepository implements IRepository {
-  static JsonRepository? _instance;
-
-  Map<String, JsonFactory>? _typeRegistry;
-
   final Map<String, Base> _data = {};
-  final String _filename = "data.json";
+  final String _filename;
+  final Map<String, JsonFactory> _typeRegistry;
 
-  JsonRepository._internal(this._typeRegistry);
+  Future<void> _ioQueue = Future.value();
 
-  static Future<JsonRepository> getInstance({Map<String, JsonFactory>? factories}) async{
-    
-    if(_instance != null){
-      return _instance!;
-    }
+  JsonRepository({
+    required this._filename,
+    required this._typeRegistry,
+  });
 
-    if (factories == null || factories.isEmpty) {
-      throw ArgumentError("Factories must be provided on first initialization.");
-    }
-    else{
-      _instance = JsonRepository._internal(factories);
-      await _instance!._reload();
-      return _instance!;
-    }
-  }
+  @override
+  Future<void> commit() {
+    final dataSnapshot = Map<String, dynamic>.unmodifiable(
+        _data.map((key, value) => MapEntry(key, value.toMap())));
 
-  Future<void> _commit() async {
-    final Map<String, Map<String, dynamic>> jsonMap = {};
-    _data.forEach((key, value) {
-      jsonMap[key] = value.toMap();
+    _ioQueue = _ioQueue.then((_) async {
+      final jsonString = jsonEncode(dataSnapshot);
+      await File(_filename).writeAsString(jsonString);
+    }).catchError((e, s) {
+      print("CRITICAL REPOSITORY COMMIT FAILED: $e");
+      print(s);
+      throw e;
     });
 
-    final jsonString = json.encode(jsonMap);
-
-    var f = File(_filename);
-    try {
-      if (!await f.exists()) {
-        await f.create(recursive: true);
-      }
-      await f.writeAsString(jsonString);
-    } catch (e) {
-      print("Error writing to File $e");
-    }
+    return _ioQueue;
   }
 
-  Future<void> _reload() async {
-    final f = File(_filename);
+  @override
+  Future<void> reload() {
+    _ioQueue = _ioQueue.then((_) async {
+      final f = File(_filename);
 
-    if (!await f.exists()) {
-      await f.create(recursive: true);
-      print("File created, no data to load.");
-      return;
-    }
+      if (!await f.exists()) {
+        await f.create(recursive: true);
+        _data.clear();
+        return;
+      }
 
-    try {
-      String jsonString = await f.readAsString();
+      final jsonString = await f.readAsString();
       if (jsonString.isEmpty) {
-        print("File is empty, loading done.");
         _data.clear();
         return;
       }
 
       final Map<String, dynamic> jsonMap = jsonDecode(jsonString);
-
       _data.clear();
+
       jsonMap.forEach((key, val) {
         final typeName = key.split('.').first;
-        final factory = _typeRegistry?[typeName];
-        if (factory != null){
+        final factory = _typeRegistry[typeName];
+
+        if (factory != null) {
           _data[key] = factory(val as Map<String, dynamic>);
-        } else {
-          print("Warning: No factory found for type '$typeName'.");
         }
+      });
+    }).catchError((e, s) {
+      print("CRITICAL REPOSITORY RELOAD FAILED: $e");
+      print(s);
+      _data.clear();
+      throw e;
     });
 
-      print("loading is done. Loaded ${_data.length} items.");
-    } catch (e) {
-      print("Error reading from File $e");
-      _data.clear();
-    }
+    return _ioQueue;
   }
 
   @override
@@ -102,27 +87,55 @@ class JsonRepository implements IRepository {
   Future<Map<String, T>> getAllOfType<T extends Base>() async {
     final Map<String, T> filteredMap = {};
     _data.forEach((key, value) {
-    
-    if (value is T) {
-      
-      filteredMap[key] = value;
-    }
-  });
-  
-  return Map.unmodifiable(filteredMap);
+      if (value is T) {
+        filteredMap[key] = value;
+      }
+    });
+    return Map.unmodifiable(filteredMap);
   }
 
   @override
   Future<void> save(Base obj) async {
     final key = obj.getKey();
     _data[key] = obj;
-    await _commit();
   }
 
   @override
   Future<void> delete(Base obj) async {
     final key = obj.getKey();
     _data.remove(key);
-    await _commit();
   }
 }
+
+
+/*
+ * =============================================================================
+ * !!! ARCHITECTURAL WARNING - NOT FOR PRODUCTION USE !!!
+ * =============================================================================
+ *
+ * This JsonRepository implementation uses an in-memory "Unit of Work" pattern.
+ * It was designed for simplicity and to practice abstraction, but it has
+ * critical performance and scalability drawbacks:
+ *
+ * 1. MEMORY BOTTLENECK:
+ * The `reload()` method loads the *entire* database file into the `_data`
+ * cache. This is not scalable and will cause an OutOfMemory crash
+ * if the `tasks.json` file grows too large.
+ *
+ * 2. I/O BOTTLENECK:
+ * The `_commit()` method *rewrites the entire* JSON file every time it's
+ * called, even for a single object change. This is extremely inefficient
+ * for frequent `save` or `delete` operations.
+ *
+ * 3. DATA LOSS RISK:
+ * All changes (`save`, `delete`) only modify the in-memory `_data` cache.
+ * If the application crashes or is terminated before `commit()` is
+ * explicitly called, *all data from that session will be lost*.
+ *
+ * 4. POOR ABSTRACTION (ISP VIOLATION):
+ * The `IRepository` contract (with `commit`/`reload`) is heavily
+ * "opinionated" and assumes this specific in-memory/batch-save
+ * workflow. This makes the interface incompatible with real-time or
+ * transactional backends (like Firebase or a direct MySQL/API)
+ * which handle persistence differently (e.g., per-operation, not per-session).
+ */
